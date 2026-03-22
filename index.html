@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VirtualWin OS v15.5 - Window Controls Restored</title>
+    <style>
+        :root { --accent: #0078d7; --taskbar: rgba(25, 25, 25, 0.95); --win-bg: #ffffff; --text: #000; }
+        .dark-theme { --win-bg: #1e1e1e; --text: #ffffff; }
+        
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: 'Segoe UI', sans-serif; background: #000; user-select: none; }
+        #desktop { width: 100vw; height: 100vh; background: url('https://images.wallpaperscraft.ru/image/single/gora_vershina_sneg_140026_1920x1080.jpg') center/cover; position: relative; }
+        
+        /* Icons */
+        .icons-grid { padding: 20px; display: grid; grid-template-rows: repeat(auto-fill, 95px); gap: 15px; grid-auto-flow: column; width: fit-content; }
+        .icon { width: 85px; height: 95px; text-align: center; color: white; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .icon:hover { background: rgba(255,255,255,0.15); border-radius: 4px; }
+        .icon-img { font-size: 40px; }
+        .icon-label { font-size: 11px; text-shadow: 1px 1px 2px #000; margin-top: 5px; }
+
+        /* Windows */
+        .window { position: absolute; background: var(--win-bg); color: var(--text); border: 1px solid #777; box-shadow: 0 15px 40px rgba(0,0,0,0.6); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; z-index: 100; min-width: 250px; }
+        .win-header { height: 35px; background: var(--win-bg); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(128,128,128,0.2); cursor: move; }
+        .win-title { padding-left: 12px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+        .win-btns { display: flex; height: 100%; }
+        .win-btns button { width: 45px; height: 100%; border: none; background: transparent; color: var(--text); cursor: pointer; font-size: 14px; transition: 0.1s; }
+        .win-btns button:hover { background: rgba(128,128,128,0.2); }
+        .win-btns .close:hover { background: #e81123; color: white; }
+
+        /* Taskbar & Start */
+        .taskbar { position: absolute; bottom: 0; width: 100%; height: 45px; background: var(--taskbar); backdrop-filter: blur(15px); display: flex; align-items: center; z-index: 9999; }
+        .start-btn { width: 48px; height: 100%; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .start-btn svg { fill: white; width: 20px; }
+        .task-tab { padding: 0 12px; height: 32px; background: rgba(255,255,255,0.1); border-bottom: 2px solid var(--accent); color: white; display: flex; align-items: center; cursor: pointer; font-size: 12px; border-radius: 3px; margin: 0 4px; }
+        .clock { margin-left: auto; color: white; padding-right: 15px; font-size: 11px; text-align: right; }
+        
+        #start-menu { position: absolute; bottom: 45px; left: 5px; width: 300px; height: 400px; background: rgba(30,30,30,0.9); backdrop-filter: blur(20px); border-radius: 8px; display: none; flex-direction: column; padding: 15px; color: white; z-index: 10000; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+
+        /* Game Style */
+        #game-hud { position: absolute; top: 10px; left: 10px; color: gold; font-weight: bold; text-shadow: 2px 2px #000; z-index: 10; font-family: monospace; font-size: 18px; pointer-events: none; }
+        canvas { background: #1a0f0a; display: block; width: 100%; height: 100%; }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+<div id="desktop" onclick="closeStart()">
+    <div class="icons-grid" id="icons-grid"></div>
+
+    <div id="start-menu" onclick="event.stopPropagation()">
+        <div style="border-bottom: 1px solid #444; padding-bottom: 10px; margin-bottom: 10px;">👤 Administrator</div>
+        <div id="start-list"></div>
+    </div>
+
+    <div class="taskbar">
+        <div class="start-btn" onclick="toggleStart(event)">
+            <svg viewBox="0 0 24 24"><path d="M0 3.449L9.75 2.1V11.1H0V3.449zm0 8.536h9.75v9L0 19.686v-7.701zM10.887 1.95L24 0v11.1H10.887V1.95zm0 10.035H24v11.1l-13.113-1.815v-9.285z"/></svg>
+        </div>
+        <div id="task-icons" style="display:flex; align-items:center; padding-left:10px;"></div>
+        <div class="clock" id="clock"></div>
+    </div>
+</div>
+
+<script>
+    const apps = {
+        spelunky: { name: 'Spelunky v15', icon: '📦', w: 800, h: 550 },
+        cmd: { name: 'Терминал', icon: '💻', w: 600, h: 400 },
+        explorer: { name: 'Проводник', icon: '📂', w: 500, h: 350 },
+        settings: { name: 'Параметры', icon: '⚙️', w: 400, h: 400 }
+    };
+
+    let windows = {};
+    let zIdx = 1000;
+
+    function init() {
+        const grid = document.getElementById('icons-grid');
+        const slist = document.getElementById('start-list');
+        Object.keys(apps).forEach(id => {
+            grid.innerHTML += `<div class="icon" onclick="openApp('${id}')"><span class="icon-img">${apps[id].icon}</span><span class="icon-label">${apps[id].name}</span></div>`;
+            slist.innerHTML += `<div style="padding:10px; cursor:pointer;" onclick="openApp('${id}')">${apps[id].icon} ${apps[id].name}</div>`;
+        });
+        updateClock(); setInterval(updateClock, 1000);
+    }
+
+    function toggleStart(e) { e.stopPropagation(); const m = document.getElementById('start-menu'); m.style.display = m.style.display === 'flex' ? 'none' : 'flex'; }
+    function closeStart() { document.getElementById('start-menu').style.display = 'none'; }
+    function updateClock() { const n = new Date(); document.getElementById('clock').innerHTML = n.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) + "<br>" + n.toLocaleDateString(); }
+
+    window.openApp = (id) => {
+        if(windows[id]) { restoreWin(id); return; }
+        const win = document.createElement('div');
+        win.id = `win-${id}`; win.className = 'window';
+        win.style.width = apps[id].w + 'px'; win.style.height = apps[id].h + 'px';
+        win.style.left = (50 + Object.keys(windows).length * 20) + 'px';
+        win.style.top = (50 + Object.keys(windows).length * 20) + 'px';
+        win.style.zIndex = ++zIdx;
+        
+        win.innerHTML = `<div class="win-header" onmousedown="dragStart(event,'${id}')">
+            <span class="win-title">${apps[id].icon} ${apps[id].name}</span>
+            <div class="win-btns">
+                <button onclick="minimizeWin('${id}')">_</button>
+                <button onclick="maximizeWin('${id}')">▢</button>
+                <button onclick="closeWin('${id}')" class="close">✕</button>
+            </div>
+        </div><div id="body-${id}" style="flex:1; position:relative; overflow:hidden;"></div>`;
+        
+        document.getElementById('desktop').appendChild(win);
+        windows[id] = { maximized: false, oldW: apps[id].w, oldH: apps[id].h, oldL: win.style.left, oldT: win.style.top };
+        updateTaskbar();
+        closeStart();
+        if(id === 'spelunky') startSpelunky();
+    };
+
+    function closeWin(id) { document.getElementById(`win-${id}`).remove(); delete windows[id]; updateTaskbar(); }
+    function minimizeWin(id) { document.getElementById(`win-${id}`).style.display = 'none'; }
+    function restoreWin(id) { document.getElementById(`win-${id}`).style.display = 'flex'; focusWin(id); }
+    function focusWin(id) { document.getElementById(`win-${id}`).style.zIndex = ++zIdx; }
+
+    function maximizeWin(id) {
+        const win = document.getElementById(`win-${id}`);
+        const state = windows[id];
+        if(!state.maximized) {
+            state.oldW = win.style.width; state.oldH = win.style.height;
+            state.oldL = win.style.left; state.oldT = win.style.top;
+            win.style.width = '100vw'; win.style.height = 'calc(100vh - 45px)';
+            win.style.left = '0'; win.style.top = '0';
+            state.maximized = true;
+        } else {
+            win.style.width = state.oldW; win.style.height = state.oldH;
+            win.style.left = state.oldL; win.style.top = state.oldT;
+            state.maximized = false;
+        }
+    }
+
+    function updateTaskbar() {
+        const bar = document.getElementById('task-icons');
+        bar.innerHTML = '';
+        Object.keys(windows).forEach(id => {
+            bar.innerHTML += `<div class="task-tab" onclick="restoreWin('${id}')">${apps[id].icon}</div>`;
+        });
+    }
+
+    // --- SPELUNKY V15 CORE ---
+    function startSpelunky() {
+        const b = document.getElementById('body-spelunky');
+        b.innerHTML = `<div id="game-hud">HP: ❤️❤️❤️❤️ | GOLD: 0 | LVL: 1</div><canvas id="sc" width="800" height="515"></canvas>`;
+        const canvas = b.querySelector('#sc'), ctx = canvas.getContext('2d');
+        
+        let p = { 
+            x: 100, y: 100, vx: 0, vy: 0, hp: 4, gold: 0, lvl: 1,
+            state: 'alive', timer: 0, dir: 1, anim: 0, ragdoll: null, whip: 0 
+        };
+
+        let platforms = [], enemies = [], coins = [];
+        const TILE = 40, R_LIMIT = 2800;
+
+        function genLevel() {
+            platforms = [{x: 0, y: 440, w: 3000, h: 100}];
+            enemies = []; coins = [];
+            for(let i=2; i<65; i++) {
+                let rx = i*TILE*1.4;
+                if(Math.random() > 0.6) platforms.push({x: rx, y: 320 - (Math.random()*60), w: 120, h: 20});
+                if(Math.random() > 0.7) coins.push({x: rx + 20, y: 410});
+                if(Math.random() > 0.92) enemies.push({x: rx, y: 410, vx: 2, range: 120, startX: rx});
+            }
+        }
+        genLevel();
+
+        let keys = {};
+        const kd = (e) => { keys[e.code] = true; if(e.code==='KeyX' && p.state!=='ragdoll') p.whip = 12; };
+        const ku = (e) => keys[e.code] = false;
+        window.addEventListener('keydown', kd); window.addEventListener('keyup', ku);
+
+        function createRagdoll() {
+            p.ragdoll = [
+                {x: p.x+12, y: p.y, vx: Math.random()*12-6, vy: -9, type:'head', r: 7},
+                {x: p.x+12, y: p.y+15, vx: Math.random()*8-4, vy: -6, type:'body', w: 4, h: 15},
+                {x: p.x+8, y: p.y+25, vx: Math.random()*6-3, vy: -3, type:'leg', w: 3, h: 10},
+                {x: p.x+16, y: p.y+25, vx: Math.random()*6-3, vy: -3, type:'leg', w: 3, h: 10}
+            ];
+        }
+
+        function gameLoop() {
+            if(!windows['spelunky']) { window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); return; }
+            ctx.fillStyle = "#1a0f0a"; ctx.fillRect(0, 0, 800, 515);
+            ctx.save(); ctx.translate(-p.x + 350, 0);
+
+            // Бордюры
+            ctx.fillStyle = "#331a11";
+            ctx.fillRect(-20, 0, 20, 515); 
+            ctx.fillRect(R_LIMIT+100, 0, 20, 515); 
+
+            ctx.fillStyle = "#5d4037"; platforms.forEach(b => ctx.fillRect(b.x, b.y, b.w, b.h));
+            ctx.fillStyle = "gold"; coins.forEach((c, i) => {
+                ctx.beginPath(); ctx.arc(c.x, c.y, 6, 0, 7); ctx.fill();
+                if(p.state!=='ragdoll' && Math.abs(p.x-c.x)<30 && Math.abs(p.y-c.y)<30) { p.gold+=500; coins.splice(i,1); }
+            });
+
+            if(p.state === 'alive' || p.state === 'shield') {
+                if(keys['KeyA']) { p.vx = -5; p.dir = -1; p.anim += 0.25; }
+                else if(keys['KeyD']) { p.vx = 5; p.dir = 1; p.anim += 0.25; }
+                else p.vx *= 0.8;
+                if(keys['Space'] && p.onG) { p.vy = -12.5; p.onG = false; }
+
+                p.vy += 0.65; p.x += p.vx; p.y += p.vy;
+                p.onG = false;
+
+                if(p.x < 0) { p.x = 0; p.vx = 0; }
+                if(p.x > R_LIMIT) { p.x = R_LIMIT; p.vx = 0; }
+
+                platforms.forEach(b => {
+                    if(p.x+20 > b.x && p.x < b.x+b.w && p.y+38 > b.y && p.y < b.y+b.h) {
+                        if(p.vy > 0) { p.y = b.y-38; p.vy = 0; p.onG = true; }
+                    }
+                });
+
+                enemies.forEach((en, i) => {
+                    en.x += en.vx; if(Math.abs(en.x - en.startX) > en.range) en.vx *= -1;
+                    ctx.fillStyle = "#ff4444"; ctx.fillRect(en.x, en.y+15, 25, 15);
+                    if(p.whip > 0 && Math.abs(p.x + p.dir*35 - en.x) < 45 && Math.abs(p.y - en.y) < 40) {
+                        enemies.splice(i, 1); p.gold += 1000;
+                    } else if(p.state === 'alive' && Math.abs(p.x - en.x) < 25 && Math.abs(p.y - en.y) < 30) {
+                        p.hp--; p.state = 'ragdoll'; p.timer = 180; createRagdoll();
+                    }
+                });
+
+                if(p.state === 'shield') {
+                    p.timer--; if(p.timer <= 0) p.state = 'alive';
+                    ctx.strokeStyle = "rgba(0, 255, 255, 0.6)"; ctx.lineWidth = 4;
+                    ctx.beginPath(); ctx.arc(p.x+12, p.y+18, 35+Math.sin(Date.now()/40)*6, 0, 7); ctx.stroke();
+                }
+
+                ctx.strokeStyle = "white"; ctx.lineWidth = 2.5; ctx.beginPath();
+                ctx.arc(p.x+12, p.y+8, 7, 0, 7);
+                ctx.moveTo(p.x+12, p.y+15); ctx.lineTo(p.x+12, p.y+28);
+                let wk = Math.sin(p.anim)*9;
+                ctx.moveTo(p.x+12, p.y+28); ctx.lineTo(p.x+12+wk, p.y+38);
+                ctx.moveTo(p.x+12, p.y+28); ctx.lineTo(p.x+12-wk, p.y+38);
+                ctx.moveTo(p.x+12, p.y+18); ctx.lineTo(p.x+(p.whip>0?42*p.dir:22), p.y+(p.whip>0?18:22));
+                ctx.stroke();
+
+                if(p.whip > 0) {
+                    ctx.strokeStyle = "orange"; ctx.beginPath();
+                    ctx.arc(p.x+12, p.y+18, 48, p.dir>0?-0.6:2.4, p.dir>0?0.6:3.9); ctx.stroke();
+                    p.whip--;
+                }
+                if(p.x >= R_LIMIT - 50) { p.lvl++; p.x = 100; genLevel(); }
+            } else {
+                p.ragdoll.forEach(part => {
+                    part.vy += 0.55; part.x += part.vx; part.y += part.vy;
+                    if(part.y > 425) { part.y = 425; part.vy *= -0.35; part.vx *= 0.85; }
+                    if(part.x < 0) { part.x = 0; part.vx *= -0.5; }
+                    if(part.x > R_LIMIT+50) { part.x = R_LIMIT+50; part.vx *= -0.5; }
+                    ctx.fillStyle = "white";
+                    if(part.type==='head') { ctx.beginPath(); ctx.arc(part.x, part.y, part.r, 0, 7); ctx.fill(); }
+                    else ctx.fillRect(part.x, part.y, part.w, part.h);
+                });
+                if(p.hp > 0) {
+                    p.timer--;
+                    if(p.timer <= 0) { p.state = 'shield'; p.timer = 180; p.x = p.ragdoll[0].x-12; p.y = p.ragdoll[0].y-8; p.vx=0; p.vy=0; }
+                }
+            }
+
+            ctx.restore();
+            document.getElementById('game-hud').innerHTML = `HP: ${"❤️".repeat(Math.max(0,p.hp))} | GOLD: ${p.gold} | LVL: ${p.lvl}`;
+            requestAnimationFrame(gameLoop);
+        }
+        gameLoop();
+    }
+
+    function dragStart(e, id) {
+        if(windows[id].maximized) return;
+        const win = document.getElementById(`win-${id}`);
+        let ox = e.clientX - win.offsetLeft, oy = e.clientY - win.offsetTop;
+        const move = (ev) => { win.style.left = (ev.clientX - ox) + 'px'; win.style.top = (ev.clientY - oy) + 'px'; };
+        const end = () => window.removeEventListener('mousemove', move);
+        window.addEventListener('mousemove', move); window.addEventListener('mouseup', end);
+        focusWin(id);
+    }
+
+    init();
+</script>
+</body>
+</html>
